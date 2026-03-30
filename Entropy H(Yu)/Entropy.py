@@ -168,6 +168,15 @@ def compute_entropies(df: pd.DataFrame, min_checkins: int = 10):
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
     df = df.dropna(subset=["timestamp"])
     df["hour"] = df["timestamp"].dt.hour
+    # Sort by user and time to make shift(1) represent the previous check-in
+    df = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+
+    # Past feature creation (t-1 context)
+    df["prev_category"] = df.groupby("user_id")["category_id"].shift(1)
+    df["prev_hour"] = df.groupby("user_id")["hour"].shift(1)
+
+    # Remove first check-in per user (no past context)
+    df = df.dropna(subset=["prev_category", "prev_hour"])
 
     # Filter users with enough check-ins
     user_counts = df.groupby("user_id").size()
@@ -192,7 +201,7 @@ def compute_entropies(df: pd.DataFrame, min_checkins: int = 10):
     for u, g in df.groupby("user_id"):
         total_u = len(g)
         h_u_c = 0.0
-        for (c, gc) in g.groupby("category_id"):
+        for (c, gc) in g.groupby("prev_category"):
             p_c_given_u = len(gc) / total_u
             poi_counts_c = gc.groupby("poi_id").size().values
             h_y_u_c = entropy_from_counts(poi_counts_c)
@@ -205,7 +214,7 @@ def compute_entropies(df: pd.DataFrame, min_checkins: int = 10):
     for u, g in df.groupby("user_id"):
         total_u = len(g)
         h_u_ct = 0.0
-        for (c, t), gct in g.groupby(["category_id", "hour"]):
+        for (c, t), gct in g.groupby(["prev_category", "prev_hour"]):
             p_ct_given_u = len(gct) / total_u
             poi_counts_ct = gct.groupby("poi_id").size().values
             h_y_u_ct = entropy_from_counts(poi_counts_ct)
